@@ -1,0 +1,190 @@
+---
+- name: Deploy demo-message-service
+  hosts: demo_message_servers
+  become: true
+  gather_facts: true
+
+  pre_tasks:
+    - name: Show deployment target
+      ansible.builtin.debug:
+        msg:
+          - "Deploying {{ app_name }} to {{ inventory_hostname }}"
+          - "Runtime directory: {{ app_current_dir }}"
+          - "Artifact source on controller: {{ artifact_src }}"
+          - "Config source on controller: {{ app_config_src }}"
+
+    - name: Verify artifact exists on Ansible controller
+      ansible.builtin.stat:
+        path: "{{ artifact_src }}"
+      register: artifact_stat
+      delegate_to: localhost
+      become: false
+
+    - name: Fail if artifact is missing
+      ansible.builtin.fail:
+        msg: "Artifact not found on controller: {{ artifact_src }}. Run mvn clean package or Jenkins package stage first."
+      when: not artifact_stat.stat.exists
+
+    - name: Verify application.yml exists on Ansible controller
+      ansible.builtin.stat:
+        path: "{{ app_config_src }}"
+      register: config_stat
+      delegate_to: localhost
+      become: false
+
+    - name: Fail if application.yml is missing
+      ansible.builtin.fail:
+        msg: "application.yml not found on controller: {{ app_config_src }}"
+      when: not config_stat.stat.exists
+
+    - name: Verify VERSION file exists on Ansible controller
+      ansible.builtin.stat:
+        path: "{{ version_src }}"
+      register: version_stat
+      delegate_to: localhost
+      become: false
+
+    - name: Check Java runtime on target host
+      ansible.builtin.command: "{{ java_bin }} -version"
+      register: java_version_result
+      changed_when: false
+
+  tasks:
+    - name: Ensure application group exists
+      ansible.builtin.group:
+        name: "{{ app_group }}"
+        system: true
+        state: present
+
+    - name: Ensure application user exists
+      ansible.builtin.user:
+        name: "{{ app_user }}"
+        group: "{{ app_group }}"
+        system: true
+        shell: /usr/sbin/nologin
+        create_home: false
+        state: present
+
+    - name: Ensure application directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ app_group }}"
+        mode: "0755"
+      loop:
+        - "{{ app_base_dir }}"
+        - "{{ app_current_dir }}"
+        - "{{ app_backup_dir }}"
+
+    - name: Capture deployment timestamp
+      ansible.builtin.set_fact:
+        deploy_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+
+    - name: Create backup directory for previous deployment
+      ansible.builtin.file:
+        path: "{{ app_backup_dir }}/{{ deploy_timestamp }}"
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ app_group }}"
+        mode: "0755"
+      when: backup_before_deploy | bool
+
+    - name: Check existing deployed files
+      ansible.builtin.stat:
+        path: "{{ app_current_dir }}/{{ item }}"
+      register: deployed_file_stats
+      loop:
+        - "{{ jar_file_name }}"
+        - "{{ config_file_name }}"
+        - "{{ version_file_name }}"
+      when: backup_before_deploy | bool
+
+    - name: Backup existing deployed files
+      ansible.builtin.copy:
+        src: "{{ app_current_dir }}/{{ item.item }}"
+        dest: "{{ app_backup_dir }}/{{ deploy_timestamp }}/{{ item.item }}"
+        remote_src: true
+        owner: "{{ app_user }}"
+        group: "{{ app_group }}"
+        mode: preserve
+      loop: "{{ deployed_file_stats.results | default([]) }}"
+      when:
+        - backup_before_deploy | bool
+        - item.stat.exists
+
+    - name: Copy executable JAR
+      ansible.builtin.copy:
+        src: "{{ artifact_src }}"
+        dest: "{{ app_current_dir }}/{{ jar_file_name }}"
+        owner: "{{ app_user }}"
+        group: "{{ app_group }}"
+        mode: "0644"
+      notify: Restart demo-message-service
+
+    - name: Copy external application.yml
+      ansible.builtin.copy:
+        src: "{{ app_config_src }}"
+        dest: "{{ app_current_dir }}/{{ config_file_name }}"
+        owner: "{{ app_user }}"
+        group: "{{ app_group }}"
+        mode: "0644"
+      notify: Restart demo-message-service
+
+    - name: Copy VERSION metadata
+      ansible.builtin.copy:
+        src: "{{ version_src }}"
+        dest: "{{ app_current_dir }}/{{ version_file_name }}"
+        owner: "{{ app_user }}"
+        group: "{{ app_group }}"
+        mode: "0644"
+      when: version_stat.stat.exists
+
+    - name: Install systemd unit
+      ansible.builtin.template:
+        src: demo-message-service.service.j2
+        dest: "/etc/systemd/system/{{ service_name }}.service"
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - Reload systemd
+        - Restart demo-message-service
+
+    - name: Flush handlers before health check
+      ansible.builtin.meta: flush_handlers
+
+    - name: Ensure service is enabled and started
+      ansible.builtin.systemd_service:
+        name: "{{ service_name }}"
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Wait for health endpoint
+      ansible.builtin.uri:
+        url: "{{ health_url }}"
+        method: GET
+        return_content: true
+        status_code: 200
+      register: health_result
+      retries: 20
+      delay: 3
+      until:
+        - health_result.status == 200
+        - health_result.json.status == "ok"
+
+    - name: Show deployed health response
+      ansible.builtin.debug:
+        var: health_result.json
+
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+
+    - name: Restart demo-message-service
+      ansible.builtin.systemd_service:
+        name: "{{ service_name }}"
+        state: restarted
+        daemon_reload: true

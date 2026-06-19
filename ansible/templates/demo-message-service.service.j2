@@ -1,0 +1,24 @@
+[Unit]
+Description=Demo Message Service
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User={{ app_user }}
+Group={{ app_group }}
+WorkingDirectory={{ app_current_dir }}
+ExecStart={{ java_bin }} -jar {{ app_current_dir }}/{{ jar_file_name }} --spring.config.location=file:{{ app_current_dir }}/{{ config_file_name }}
+Restart=always
+RestartSec=5
+SuccessExitStatus=143
+
+# Basic hardening for demo runtime. Relax if your environment needs more access.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths={{ app_base_dir }}
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,8 @@
+server:
+  port: 8080
+
+demo:
+  serviceName: "demo-message-service"
+  version: "1.0.0"
+  environment: "production"
+  message: "Hello from approved deployment"

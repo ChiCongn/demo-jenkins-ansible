@@ -1,0 +1,10 @@
+target/
+*.log
+.idea/
+.vscode/
+*.iml
+.DS_Store
+
+# Ansible local files
+*.retry
+.ansible/

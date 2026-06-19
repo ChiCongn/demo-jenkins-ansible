@@ -1,0 +1,25 @@
+---
+app_name: demo-message-service
+service_name: demo-message-service
+
+app_user: app
+app_group: app
+app_base_dir: /opt/app/demo-message
+app_current_dir: /opt/app/demo-message/current
+app_backup_dir: /opt/app/demo-message/backups
+
+jar_file_name: demo-message-service.jar
+config_file_name: application.yml
+version_file_name: VERSION
+
+java_bin: /usr/bin/java
+app_port: 8080
+health_url: "http://127.0.0.1:{{ app_port }}/health"
+
+# Jenkins normally overrides these with --extra-vars.
+artifact_src: "{{ playbook_dir }}/../target/demo-message-service.jar"
+app_config_src: "{{ playbook_dir }}/../src/main/resources/application.yml"
+version_src: "{{ playbook_dir }}/../VERSION"
+
+deploy_env: production
+backup_before_deploy: true
