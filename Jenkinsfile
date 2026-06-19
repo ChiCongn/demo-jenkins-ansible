@@ -125,17 +125,25 @@ VERSION_EOF
                 expression { return params.RUN_DEPLOY }
             }
             steps {
-                sshagent(credentials: [params.SSH_CREDENTIALS_ID]) {
+                withCredentials([
+                    sshUserPrivateKey(
+                        credentialsId: params.SSH_CREDENTIALS_ID,
+                        keyFileVariable: 'ANSIBLE_PRIVATE_KEY',
+                        usernameVariable: 'ANSIBLE_SSH_USER'
+                    )
+                ]) {
                     sh '''
                         set -eu
+
                         ansible-playbook \
-                          -i "${ANSIBLE_INVENTORY}" \
-                          ansible/deploy.yml \
-                          --limit "${ANSIBLE_LIMIT}" \
-                          --extra-vars "deploy_env=${DEPLOY_ENV}" \
-                          --extra-vars "artifact_src=${WORKSPACE}/${JAR_FILE}" \
-                          --extra-vars "app_config_src=${WORKSPACE}/${DEPLOY_BUNDLE_DIR}/application.yml" \
-                          --extra-vars "version_src=${WORKSPACE}/${VERSION_FILE}"
+                        -i "${ANSIBLE_INVENTORY}" \
+                        ansible/deploy.yml \
+                        --limit "${ANSIBLE_LIMIT}" \
+                        --private-key "${ANSIBLE_PRIVATE_KEY}" \
+                        --extra-vars "deploy_env=${DEPLOY_ENV}" \
+                        --extra-vars "artifact_src=${WORKSPACE}/${JAR_FILE}" \
+                        --extra-vars "app_config_src=${WORKSPACE}/${DEPLOY_BUNDLE_DIR}/application.yml" \
+                        --extra-vars "version_src=${WORKSPACE}/${VERSION_FILE}"
                     '''
                 }
             }
