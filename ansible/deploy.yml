@@ -155,7 +155,7 @@
       ansible.builtin.meta: flush_handlers
 
     - name: Ensure service is enabled and started
-      ansible.builtin.systemd_service:
+      ansible.builtin.systemd:
         name: "{{ service_name }}"
         enabled: true
         state: started
@@ -180,11 +180,11 @@
 
   handlers:
     - name: Reload systemd
-      ansible.builtin.systemd_service:
+      ansible.builtin.systemd:
         daemon_reload: true
 
     - name: Restart demo-message-service
-      ansible.builtin.systemd_service:
+      ansible.builtin.systemd:
         name: "{{ service_name }}"
         state: restarted
         daemon_reload: true
